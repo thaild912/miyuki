@@ -56,4 +56,4 @@ class Client(commands.Bot):
 
 if __name__ == '__main__':
     client = Client()
-    client.run(os.getenv('DDISCORD_TOKEN'))
+    client.run(os.getenv('DISCORD_TOKEN'))
