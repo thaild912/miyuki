@@ -1,8 +1,7 @@
+import discord
 from discord.ext import commands
-import utils.helper as helper
 import validators
-
-
+import src.utils.helper as helper
 
 
 class UtilityCog(commands.Cog):
@@ -10,16 +9,10 @@ class UtilityCog(commands.Cog):
         self.client = client
 
     @commands.command()
-    async def sendvideo(self, ctx, url):
+    async def sendvideo(self, ctx: discord.ext.commands.Context, url: str):
         if validators.url(url):
-            print('a')
             if helper.is_supported(url):
-                await helper.reply_with_video(ctx, url)
-
-    @commands.command()
-    async def s(self, ctx):
-        # view = confirmation_button_view(ctx.author, ConfirmationType.DELETE)
-        # await ctx.send(view=view)
+                await helper.reply_with_video(ctx, url, notify_error=True)
 
 
 async def setup(client):

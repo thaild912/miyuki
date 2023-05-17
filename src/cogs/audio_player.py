@@ -1,6 +1,9 @@
 import asyncio
+from src.utils import helper
+from src.utils.navigation_button_view import NavigationButtonView
+import discord
 from discord.ext import tasks, commands
-from utils.ytdlsource import YTDLSource, ytdlp, playlist_parse
+from src.utils.ytdlsource import YTDLSource, playlist_parse
 
 
 class AudioPlayer(commands.Cog):
@@ -25,14 +28,14 @@ class AudioPlayer(commands.Cog):
 
     @commands.command(aliases=['pley', 'Play', 'PLAY', 'plya'])
     async def play(self, ctx, *, url, added_options=""):
-        print("a")
-        print(url)
         """Streams from an url (same as yt, but doesn't predownload)"""
         if not str(ctx.guild.id) in self.queue:
             self.queue[str(ctx.guild.id)] = []
             self.loop[str(ctx.guild.id)] = False
 
-        self.client.loop.create_task(playlist_parse(url, loop=self.client.loop, stream=True, queue=self.queue[str(ctx.guild.id)], added_options=added_options))
+        self.client.loop.create_task(
+            playlist_parse(url, loop=self.client.loop, stream=True, queue=self.queue[str(ctx.guild.id)],
+                           added_options=added_options))
         await asyncio.sleep(0.01)
 
         # or paused
@@ -52,16 +55,57 @@ class AudioPlayer(commands.Cog):
     @commands.command()
     async def seek(self, ctx, arg):
         time_list = list(map(int, arg.split(":")))[::-1]
-        time_s = sum([time_list[i]*(60**i) for i in range(len(time_list))])
-        url = self.queue[str(ctx.guild.id)][0].data['webpage_url']
-        player_list = await YTDLSource.from_url(url, loop=self.client.loop, stream=True, added_options=f' -ss {time_s}')
-        self.queue[str(ctx.guild.id)].insert(1, player_list[0])
+        time_s = sum([time_list[i] * (60 ** i) for i in range(len(time_list))])
+        data = self.queue[str(ctx.guild.id)][0].data
+        seeked_song = await YTDLSource.from_url(data, loop=self.client.loop, stream=True, queue=None,
+                                                added_options=f' -ss {time_s}')
+        self.queue[str(ctx.guild.id)].insert(1, seeked_song)
         await self.skip(ctx)
 
     @commands.command()
     async def queue(self, ctx):
-        for item in self.queue[str(ctx.guild.id)]:
-            await ctx.send(item.title)
+        current_page = 0
+
+        async def prev_callback_func():
+            nonlocal current_page
+            current_page -= 1
+            # first page reached
+            if current_page < 0:
+                current_page = 0
+            await generate_queue_embed()
+            return current_page > 0, current_page < len(self.queue[str(ctx.guild.id)]) // 10
+
+        async def next_callback_func():
+            nonlocal current_page
+            current_page += 1
+            # last page reached
+            if current_page > len(self.queue[str(ctx.guild.id)]) // 10:
+                current_page = len(self.queue[str(ctx.guild.id)]) // 10
+            await generate_queue_embed()
+            return current_page > 0, current_page < len(self.queue[str(ctx.guild.id)]) // 10
+
+        async def generate_queue_embed(return_embed: bool = False):
+            embed = await helper.embed_generator(ctx,
+                                                 title=f"Currently playing: {self.queue[str(ctx.guild.id)][0].data['title']}",
+                                                 url=self.queue[str(ctx.guild.id)][0].data['webpage_url'],
+                                                 img_url=self.queue[str(ctx.guild.id)][0].data['thumbnail'],
+                                                 footer=f"Page {current_page + 1}/{len(self.queue[str(ctx.guild.id)]) // 10 + 1}",
+                                                 return_embed=True)
+            # loop till 10 songs, or reached the end of the queue
+            for i in range(current_page * 10, min(((current_page + 1) * 10), len(self.queue[str(ctx.guild.id)]))):
+                embed.add_field(name="\u200b",
+                                value=f"**{i+1}. [{self.queue[str(ctx.guild.id)][i].data['title']}]({self.queue[str(ctx.guild.id)][i].data['webpage_url']})**",
+                                inline=False)
+            if return_embed:
+                return embed
+            else:
+                await embedded_message.edit(embed=embed)
+
+        navigation_view = NavigationButtonView(prev_callback=prev_callback_func, next_callback=next_callback_func,
+                                               timeout=60.0)
+        embedded_message = await ctx.channel.send(embed=await generate_queue_embed(return_embed=True),
+                                                  view=navigation_view)
+        navigation_view.message = embedded_message
 
     @play.before_invoke
     async def ensure_voice(self, ctx):
@@ -86,11 +130,13 @@ class AudioPlayer(commands.Cog):
                         self.queue[str(ctx.guild.id)].pop(0)
                     except IndexError:
                         pass
-                print(1)
                 self.play_queue(ctx)
 
         ctx.voice_client.play(player, after=lambda e: after_play(e))
-        asyncio.run_coroutine_threadsafe(ctx.send(f'Playing {player.title}'), ctx.bot.loop)
+        embed = discord.Embed(color=discord.Color.blue(), title=f"Now playing: {player.data['title']}",
+                              url=player.data['url'])
+        embed.set_image(url=player.data['thumbnail'])
+        asyncio.run_coroutine_threadsafe(ctx.send(embed=embed), ctx.bot.loop)
 
     @tasks.loop(minutes=5.0)
     async def stop_task(self):
@@ -99,5 +145,5 @@ class AudioPlayer(commands.Cog):
                 await self.stop_guild_id(guild_id)
 
 
-async def setup(client):
+async def setup(client: discord.Client):
     await client.add_cog(AudioPlayer(client))

@@ -54,5 +54,6 @@ class Client(commands.Bot):
         print("MySQL database connected")
 
 
-client = Client()
-client.run(os.getenv('DEBUG_DISCORD_TOKEN'))
+if __name__ == '__main__':
+    client = Client()
+    client.run(os.getenv('DEBUG_DISCORD_TOKEN'))

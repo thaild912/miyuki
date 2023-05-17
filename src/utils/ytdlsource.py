@@ -11,7 +11,7 @@ ytdl_format_options = {
     'nocheckcertificate': True,
     'ignoreerrors': False,
     'logtostderr': False,
-    # 'quiet': True,
+    'quiet': True,
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',  # bind to ipv4 since ipv6 addresses cause issues sometimes
@@ -34,14 +34,19 @@ class YTDLSource(discord.PCMVolumeTransformer):
         self.url = data.get('url')
 
     @classmethod
-    async def from_url(cls, data, *, loop=None, stream=False, queue, added_options=""):
+    async def from_url(cls, data, *, loop=None, stream=False, queue: list = None, added_options=""):
         filename = data['url'] if stream else ytdlp.prepare_filename(data)
         local_ffmpeg_options = ffmpeg_options.copy()
         local_ffmpeg_options['before_options'] += added_options
-        queue.append(cls(discord.FFmpegPCMAudio(filename, **local_ffmpeg_options), data=data))
+        if queue is not None:
+            # queue exists, add player to queue
+            queue.append(cls(discord.FFmpegPCMAudio(filename, **local_ffmpeg_options), data=data))
+        else:
+            # get song only
+            return cls(discord.FFmpegPCMAudio(filename, **local_ffmpeg_options), data=data)
 
 
-async def playlist_parse(url, loop, stream, queue, added_options=""):
+async def playlist_parse(url: str, loop, stream, queue, added_options=""):
 
     for i in range(1, 101):
         temp_ytdl_format_options = ytdl_format_options.copy()
@@ -52,8 +57,8 @@ async def playlist_parse(url, loop, stream, queue, added_options=""):
             if len(data['entries']) == 0:
                 break
             data = data['entries'][0]
-            await YTDLSource.from_url(data=data, loop=loop, stream=True, queue=queue, added_options=added_options)
+            await YTDLSource.from_url(data=data, loop=loop, stream=stream, queue=queue, added_options=added_options)
             await asyncio.sleep(0.01)
         else:
-            await YTDLSource.from_url(data=data, loop=loop, stream=True, queue=queue, added_options=added_options)
+            await YTDLSource.from_url(data=data, loop=loop, stream=stream, queue=queue, added_options=added_options)
             break
