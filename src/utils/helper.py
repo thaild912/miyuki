@@ -128,12 +128,6 @@ def compress_video(video_full_path: str, output_file_name: str, target_size: int
                   ).overwrite_output().global_args('-loglevel', 'error').run()
 
 
-@to_thread
-def convert_video():
-    ffmpeg.input("./temp/temp_video.mp4").output("./temp/temp_video_converted.mp4", vcodec='libx264',
-                                                 preset="veryslow", crf=23).run()
-
-
 async def reply_with_video(ctx: discord.ext.commands.Context, url: str, notify_error: bool = False):
     await ctx.message.edit(suppress=True)
     if get_video_length(url) is None or get_video_length(url) > MAX_SEND_VIDEO_DURATION:
@@ -148,17 +142,15 @@ async def reply_with_video(ctx: discord.ext.commands.Context, url: str, notify_e
 
     reply = await ctx.message.reply(content="Please wait a moment...")
     size = os.path.getsize("./temp/temp_video.mp4")
-    if size > MAX_VIDEO_UPLOAD_SIZE_MB * 1024 * 1024:
+    probe = ffmpeg.probe('./temp/temp_video.mp4')
+    video_metadata = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
+
+    if size < MAX_VIDEO_UPLOAD_SIZE_MB * 1024 * 1024 and video_metadata["codec_name"] == "h264":
+        await reply.edit(content=None, attachments=[discord.File("./temp/temp_video.mp4")])
+    else:
         await compress_video('./temp/temp_video.mp4', './temp/temp_video_compressed.mp4',
                              MAX_VIDEO_UPLOAD_SIZE_MB * 1000)
         await reply.edit(content=None, attachments=[discord.File("./temp/temp_video_compressed.mp4")])
-    else:
-        probe = ffmpeg.probe('./temp/temp_video.mp4')
-        video_metadata = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
-        if video_metadata["codec_name"] != "h264":
-            await reply.edit(content=None, attachments=[discord.File("./temp/temp_video_converted.mp4")])
-            return
-        await reply.edit(content=None, attachments=[discord.File("./temp/temp_video.mp4")])
 
 
 def has_emoji(msg: discord.Message) -> list[str]:
