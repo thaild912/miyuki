@@ -5,3 +5,4 @@ venv
 src/temp/*
 src/ffmpeg*
 src/facebook.com_cookies.txt
+/src/cogs/testing_cog.py
