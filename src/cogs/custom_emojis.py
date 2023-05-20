@@ -6,7 +6,6 @@ from src.utils import helper
 from src.utils.confirmation_button_view import ConfirmationButtonView, ConfirmationType
 import json
 import re
-from src.miyuki import Client
 
 CONFIRMATION_TIMEOUT = 30.0
 
@@ -36,11 +35,11 @@ class CustomEmojis(commands.Cog):
 
                 for guild in emojis:
                     for emoji in emojis[guild]:
-                        await self.add_new_emoji(ctx, emoji, int(guild), emojis[guild][emoji], importing_backup=True)
+                        await self.add_new_emoji(ctx, emoji, int(guild), emojis[guild][emoji],
+                                                 importing_backup=True)
                         counter += 1
-                self.client.sqldb.commit()
-        except Exception as err:
-            raise err
+        except Exception:
+            raise
         else:
             await ctx.send(f"Restored {counter} emojis from backup.")
 
@@ -64,13 +63,13 @@ class CustomEmojis(commands.Cog):
                             guild_id: int,
                             url: str,
                             importing_backup: bool):
-        existing_emoji = get_emoji_urls(self.client, guild_id, [emoji])
+        existing_emoji = get_emoji_urls(guild_id, [emoji])
         # emojis already in table, UPDATE
         if len(existing_emoji) > 0:
             # not importing backups, requires manual confirmation
             if not importing_backup:
                 async def confirm_overwrite():
-                    self.overwrite_emoji(emoji=emoji, guild_id=guild_id, url=url, autocommit=True)
+                    self.overwrite_emoji(emoji=emoji, guild_id=guild_id, url=url)
                     await embedded_message.edit(embed=await helper.embed_generator(ctx=ctx,
                                                                                    title=f"{emoji} has been successfully overwritten",
                                                                                    img_url=url,
@@ -95,32 +94,26 @@ class CustomEmojis(commands.Cog):
                                                                 view=confirmation_view)
                 confirmation_view.message = embedded_message
             else:
-                self.overwrite_emoji(emoji=emoji, guild_id=guild_id, url=url, autocommit=not importing_backup)
+                self.overwrite_emoji(emoji=emoji, guild_id=guild_id, url=url)
 
         else:
-            self.insert_emoji(emoji=emoji, guild_id=guild_id, url=url, autocommit=not importing_backup)
+            self.insert_emoji(emoji=emoji, guild_id=guild_id, url=url)
             if not importing_backup:
                 await helper.embed_generator(ctx=ctx,
                                              title=f"{emoji} has been set as",
                                              img_url=url,
                                              footer=f"by {ctx.author.name}#{ctx.author.discriminator}")
 
-    def overwrite_emoji(self, emoji: str, guild_id: int, url: str, autocommit: bool = False):
-        self.client.sql_cursor.execute(f"UPDATE emojis SET url = '{url}' "
-                                       f"WHERE guild_id = {guild_id} AND emoji_name = '{emoji}'")
-        if autocommit:
-            self.client.sqldb.commit()
+    def overwrite_emoji(self, emoji: str, guild_id: int, url: str):
+        helper.sql_query(f"UPDATE emojis SET url = '{url}' "
+                         f"WHERE guild_id = {guild_id} AND emoji_name = '{emoji}'")
 
-    def insert_emoji(self, emoji: str, guild_id: int, url: str, autocommit: bool = False):
-        self.client.sql_cursor.execute(f"INSERT INTO emojis (emoji_name, guild_id, url) "
-                                       f"VALUES ('{emoji}', {guild_id}, '{url}')")
-        if autocommit:
-            self.client.sqldb.commit()
+    def insert_emoji(self, emoji: str, guild_id: int, url: str):
+        helper.sql_query(f"INSERT INTO emojis (emoji_name, guild_id, url) "
+                         f"VALUES ('{emoji}', {guild_id}, '{url}')")
 
     def delete_emoji(self, emoji: str, guild_id: int):
-        # no need for autocommit since calling this function already requires confirmation
-        self.client.sql_cursor.execute(f"DELETE FROM emojis WHERE emoji_name='{emoji}' AND guild_id={guild_id}")
-        self.client.sqldb.commit()
+        helper.sql_query(f"DELETE FROM emojis WHERE emoji_name='{emoji}' AND guild_id={guild_id}")
 
     @commands.command()
     @commands.has_permissions(administrator=True)
@@ -129,7 +122,7 @@ class CustomEmojis(commands.Cog):
             await helper.error_embed(ctx, "Invalid emoji name format")
             return
 
-        existing_emoji = get_emoji_urls(self.client, ctx.guild.id, [emoji])
+        existing_emoji = get_emoji_urls(ctx.guild.id, [emoji])
         if len(existing_emoji) > 0:
             async def confirm_delete():
                 self.delete_emoji(emoji, ctx.guild.id)
@@ -162,15 +155,17 @@ async def setup(client):
     await client.add_cog(CustomEmojis(client))
 
 
-def get_emoji_urls(client: Client, guild_id: int, emojis: list[str]):
+def get_emoji_urls(guild_id: int, emojis: list[str]):
     emoji_urls = []
     try:
+        sqldb, sql_cursor = helper.open_sql_connection()
         for emoji in emojis:
-            client.sql_cursor.execute(f"SELECT url FROM emojis WHERE emoji_name = '{emoji}' AND guild_id = {guild_id}")
-            if client.sql_cursor.rowcount > 0:
-                emoji_urls.append(client.sql_cursor.fetchone()[0])
-    except mysql.connector.errors.ProgrammingError as err:
-        print(err)
-        return []
+            sql_cursor.execute(f"SELECT url FROM emojis WHERE emoji_name = '{emoji}' AND guild_id = {guild_id}")
+            if sql_cursor.rowcount > 0:
+                emoji_urls.append(sql_cursor.fetchone()[0])
+    except mysql.connector.errors.ProgrammingError:
+        raise
     else:
         return emoji_urls
+    finally:
+        helper.close_sql_connection(sqldb, sql_cursor)

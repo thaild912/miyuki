@@ -1,7 +1,7 @@
 import os
 import discord
-from discord.ext import tasks, commands
-import mysql.connector
+from discord.ext import commands
+from src.utils.helper import open_sql_connection
 
 
 class Client(commands.Bot):
@@ -19,19 +19,6 @@ class Client(commands.Bot):
             # note that on windows this DLL is automatically provided for you
             discord.opus.load_opus('libopus.so.0')
 
-        def init_sql_connection():
-            sqldb = mysql.connector.connect(
-                host="localhost",
-                user=str(os.getenv('MYSQL_USER')),
-                password=str(os.getenv('MYSQL_PASSWORD'))
-            )
-
-            return sqldb, sqldb.cursor(buffered=True)
-
-        self.init_sql_connection = init_sql_connection
-        self.sqldb = None
-        self.sql_cursor = None
-
     async def setup_hook(self):  # overwriting a handler
         print(f"\033[31mLogged in as {client.user}\033[39m")
         # loads cogs
@@ -42,16 +29,15 @@ class Client(commands.Bot):
                 print(f"Loaded cog: {filename[:-3]}")
         # await client.tree.sync()
 
-        # connect to sql db
-        self.sqldb, self.sql_cursor = self.init_sql_connection()
-        self.sql_cursor.execute("CREATE DATABASE IF NOT EXISTS discord")
-        self.sql_cursor.execute("USE discord")
-        self.sql_cursor.execute("CREATE TABLE IF NOT EXISTS emojis (id INT AUTO_INCREMENT PRIMARY KEY, "
-                                "emoji_name VARCHAR(22) NOT NULL, "
-                                "guild_id BIGINT NOT NULL, "
-                                "url VARCHAR(225) NOT NULL)")
-        self.sqldb.commit()
-        print("MySQL database connected")
+        # setup mysql db
+        sqldb, sql_cursor = open_sql_connection(init=True)
+        sql_cursor.execute("CREATE DATABASE IF NOT EXISTS discord")
+        sql_cursor.execute("USE discord")
+        sql_cursor.execute("CREATE TABLE IF NOT EXISTS emojis (id INT AUTO_INCREMENT PRIMARY KEY, "
+                           "emoji_name VARCHAR(22) NOT NULL, "
+                           "guild_id BIGINT NOT NULL, "
+                           "url VARCHAR(225) NOT NULL)")
+        sqldb.close()
 
 
 if __name__ == '__main__':

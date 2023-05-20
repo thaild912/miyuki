@@ -34,7 +34,7 @@ class ChatMonitor(commands.Cog):
         # emoji uploader
         emojis = helper.has_emoji(message)
         if len(emojis) > 0:
-            emojis_urls = get_emoji_urls(self.client, message.guild.id, emojis)
+            emojis_urls = get_emoji_urls(message.guild.id, emojis)
             for emoji_url in emojis_urls:
                 await message.channel.send(emoji_url)
 
