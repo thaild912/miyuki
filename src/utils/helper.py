@@ -10,7 +10,7 @@ import discord
 import os
 from typing import Tuple, Union, Callable, Coroutine
 import mysql.connector
-from mysql.connector import MySQLConnection, CMySQLConnection
+from mysql.connector import MySQLConnection
 from mysql.connector.cursor import MySQLCursor
 from mysql.connector.pooling import PooledMySQLConnection
 
@@ -211,7 +211,7 @@ def gif_url_checker(url: str) -> bool:
     return False
 
 
-def open_sql_connection(init: bool = False) -> Tuple[PooledMySQLConnection | MySQLConnection | CMySQLConnection, MySQLCursor]:
+def open_sql_connection(init: bool = False) -> Tuple[PooledMySQLConnection | MySQLConnection, MySQLCursor]:
     sqldb = mysql.connector.connect(
         host="localhost",
         user=str(os.getenv('MYSQL_USER')),
@@ -223,7 +223,7 @@ def open_sql_connection(init: bool = False) -> Tuple[PooledMySQLConnection | MyS
     return sqldb, sqldb.cursor(buffered=True)
 
 
-def close_sql_connection(sqldb: PooledMySQLConnection | MySQLConnection | CMySQLConnection, sql_cursor: MySQLCursor):
+def close_sql_connection(sqldb: PooledMySQLConnection | MySQLConnection, sql_cursor: MySQLCursor):
     sql_cursor.close()
     sqldb.close()
 
