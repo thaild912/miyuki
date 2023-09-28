@@ -14,7 +14,7 @@ from mysql.connector import MySQLConnection
 from mysql.connector.cursor import MySQLCursor
 from mysql.connector.pooling import PooledMySQLConnection
 
-MAX_VIDEO_UPLOAD_SIZE_MB = 8
+MAX_VIDEO_UPLOAD_SIZE_MB = 10
 MAX_SEND_VIDEO_DURATION = 300
 
 
@@ -81,26 +81,13 @@ def download_video(url: str) -> bool:
     try:
         with yt_dlp.YoutubeDL(ydl_opts_sep) as ydl:
             ydl.download(url)
-
     except yt_dlp.DownloadError as error:
-        if "Requested format is not available" in error.msg:
-            try:
-                ydl_opts_sep['format'] = 'best'
-                with yt_dlp.YoutubeDL(ydl_opts_sep) as ydl:
-                    ydl.download(url)
-                return True
-            except yt_dlp.DownloadError as error:
-                print(error.msg)
-                pass
-            except yt_dlp.utils.YoutubeDLError as error:
-                print(error.msg)
         return False
-
     except Exception as error:
         print(error)
         return False
-
-    return True
+    else:
+        return True
 
 
 @to_thread
@@ -133,7 +120,7 @@ async def reply_with_video(ctx: discord.ext.commands.Context, url: str, notify_e
     if get_video_length(url) is None or get_video_length(url) > MAX_SEND_VIDEO_DURATION:
         if notify_error:
             await embed_generator(ctx, color=discord.Color.red(),
-                                  title=f"Video requested is longer than {MAX_SEND_VIDEO_DURATION} seconds",
+                                  title=f"Video requested is longer than {MAX_SEND_VIDEO_DURATION} seconds or invalid",
                                   reply=True)
         return
     downloaded = await download_video(url)
@@ -145,12 +132,22 @@ async def reply_with_video(ctx: discord.ext.commands.Context, url: str, notify_e
     probe = ffmpeg.probe('./temp/temp_video.mp4')
     video_metadata = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
 
-    if size < MAX_VIDEO_UPLOAD_SIZE_MB * 1024 * 1024 and video_metadata["codec_name"] == "h264":
-        await reply.edit(content=None, attachments=[discord.File("./temp/temp_video.mp4")])
-    else:
-        await compress_video('./temp/temp_video.mp4', './temp/temp_video_compressed.mp4',
-                             MAX_VIDEO_UPLOAD_SIZE_MB * 1000)
-        await reply.edit(content=None, attachments=[discord.File("./temp/temp_video_compressed.mp4")])
+    print(video_metadata["codec_name"])
+    if video_metadata["codec_name"] in ["h264", "vp9"]:
+        try:
+            await reply.edit(content=None, attachments=[discord.File("./temp/temp_video.mp4")])
+            return
+        except discord.errors.HTTPException as err:
+            if err.text == "Request entity too large":
+                pass
+            else:
+                return
+
+    # needs compression
+    await reply.edit(content="Compressing...")
+    await compress_video('./temp/temp_video.mp4', './temp/temp_video_compressed.mp4',
+                         MAX_VIDEO_UPLOAD_SIZE_MB * 1000)
+    await reply.edit(content=None, attachments=[discord.File("./temp/temp_video_compressed.mp4")])
 
 
 def has_emoji(msg: discord.Message) -> list[str]:
